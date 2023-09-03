@@ -1,9 +1,10 @@
 const std = @import("std");
-const FileSource = std.Build.FileSource;
+const Path = std.Build.LazyPath;
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
     const tests = b.option(bool, "Tests", "Build tests [default: false]") orelse false;
 
     const config = b.addConfigHeader(.{
@@ -22,16 +23,21 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     lib.addConfigHeader(config);
-    lib.addIncludePath(".");
+    lib.addIncludePath(Path.relative("."));
     lib.addCSourceFiles(&.{
         "sigc++/connection.cc",
         "sigc++/functors/slot_base.cc",
         "sigc++/signal_base.cc",
         "sigc++/trackable.cc",
     }, cxxFlags);
+    lib.pie = true;
+    switch (optimize) {
+        .Debug, .ReleaseSafe => lib.bundle_compiler_rt = true,
+        else => lib.strip = true,
+    }
     lib.linkLibCpp();
     lib.installHeadersDirectoryOptions(.{
-        .source_dir = FileSource.relative("sigc++"),
+        .source_dir = Path.relative("sigc++"),
         .install_dir = .header,
         .install_subdir = "sigc++",
         .exclude_extensions = &.{
@@ -110,8 +116,8 @@ fn buildTest(b: *std.Build, info: BuildInfo) void {
     for (info.lib.include_dirs.items) |include| {
         test_exe.include_dirs.append(include) catch {};
     }
-    test_exe.addCSourceFile(info.path, cxxFlags);
-    test_exe.addCSourceFile("tests/testutilities.cc", cxxFlags);
+    test_exe.addCSourceFile(.{ .file = Path.relative(info.path), .flags = cxxFlags });
+    test_exe.addCSourceFile(.{ .file = Path.relative("tests/testutilities.cc"), .flags = cxxFlags });
     test_exe.linkLibrary(info.lib);
     test_exe.linkLibCpp();
     b.installArtifact(test_exe);
